@@ -1,0 +1,319 @@
+;; ROUTINES
+PRINT_STR MACRO STRING
+    PUSH AX
+    MOV DX,OFFSET STRING
+    MOV AH,9
+    INT 21H
+    POP AX
+ENDM
+
+PRINT MACRO CHAR
+    PUSH AX
+    PUSH DX
+    MOV DL,CHAR
+    MOV AH,2
+    INT 21H
+    POP DX
+    POP AX
+ENDM
+
+READ MACRO
+    MOV AH,8
+    INT 21H
+ENDM
+
+EXIT MACRO
+    MOV AX,4C00H
+    INT 21H
+ENDM
+
+CLEAN MACRO
+    MOV CX,0
+CLOOP1:
+    MOV DI,LINE_INDIC
+    ADD DI,CX
+    MOV DS[DI],00H
+    INC CX
+    CMP CL,11H
+    JL CLOOP1
+ENDM
+
+INFILE_STORE MACRO
+    MOV AL,DL                     ;; in DL we have the just printed element
+    MOV DI,STORING_TABLE          ;; STORING_TABLE is used for storing in file
+    MOV DS[DI],AL
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    MOV AH,40H                    ;; store 1 byte in output file
+    MOV CX,1
+    MOV DX,OFFSET STORING_TABLE
+    MOV BX,OUTPUTHAND
+    INT 21H
+    POP DX
+    POP CX
+    POP BX
+    POP AX
+ENDM
+
+;; DATA
+DATA_SEG SEGMENT
+    NEWLINE DB 0AH,0DH,'$'
+    WELCOME DB "WELCOME, PLEASE INPUT ROTATION NO. :",'$'
+    INPUTPROMT DB "INPUT SOURCE FILE: ",'$'
+    OUTPUTPROMT DB "INPUT OUTPUT FILE: " ,'$'
+    NAMEPATH EQU 50                 ;; FILE INPUT
+    INPUT_BUFF DB NAMEPATH          ;; MAXIMUM LENGTH OF INPUT FILE
+    INPUTLENG DB 0                  ;; LENGTH OF INPUT FILE
+    INPUTNAME DB NAMEPATH DUP(0)    ;; NAME OF INPUT FILE
+    INPUTFB DB 0                    ;; INPUT FINAL BYTE
+                                    ;; FILE OUTPUT
+    OUTPUT_BUFF DB NAMEPATH         ;; MAXIMUM LENGTH OF OUTPUT FILE
+    OUTPUTLENG DB 0                 ;; LENGTH OF INPUT FILE
+    OUTPUTNAME DB NAMEPATH DUP(0)   ;; NAME OF OUTPUT FILE
+    OUTPUTFB DB 0                   ;; OUTPUT FINAL BYTE
+    INPUTHAND DW 0                  ;; INPUT HANDLER
+    OUTPUTHAND DW 0                 ;; OUTPUT HANDLER
+    ROTATION_MAX EQU 1000H
+    CHAR_INDICATOR EQU 1510H
+    LINE_INDIC EQU 1520H
+    STORING_TABLE EQU 1515H
+
+DATA_SEG ENDS
+
+;; SOURCE CODE
+CODE SEGMENT PUBLIC
+ASSUME CS:CODE_SEG,DS:CODE_SEG
+
+MAIN PROC NEAR
+    MOV AX,DATA_SEG
+    MOV DS,AX
+    PRINT_STR WELCOME               ;; WELCOME MESSAGE & ASK FOR ROTATIONAL NO
+    CALL DEC_KEYB                   ;; GET IT
+    MOV DI,ROTATION_MAX             ;; PASS IT OVER
+    MOV DS[DI],AL                   ;; SAVE IT @ LOCATION W/ DESIRED OFFSET - 1000H
+    PRINT_STR NEWLINE               ;; MOVE TO NEXT LINE
+    PRINT_STR INPUTPROMT            ;; PROMT USER TO INPUT
+    MOV AH,0AH                      ;; READ INPUT AKA INITIALIZE INT21/0A
+    MOV DX,OFFSET INPUT_BUFF        ;; POINTER TO INPUT DATA BUFFER
+    INT 21H                         ;; GET INPUT AKA POINTER TO ASCII NAME
+    PRINT_STR NEWLINE               ;; NEXT LINE
+    MOV BX,OFFSET INPUTNAME         ;; WAIT FOR ASCII LAST CHAR ZERO
+    MOV AL,[INPUTLENG]
+    XOR AH,AH
+    ADD BX,AX
+    MOV BYTE PTR[BX],00
+    PRINT_STR OUTPUTPROMT           ;; PROMT USER TO OUTPUT
+    MOV AH,0AH                      ;; RE-INITIALIZE INT21/0A
+    MOV DX,OFFSET OUTPUT_BUFF       ;; POINTER TO OUTPUT DATA BUFFER
+    INT 21H                         ;; COMPLETE INT21/0A
+                                    ;; GET OUTPUT AKA POINTER TO ASCII NAME
+    MOV BX,OFFSET OUTPUTNAME        ;; AGAIN WAIT FOR ASCII LAST CHAR ZERO
+    MOV AL,[OUTPUTLENG]
+    XOR AH,AH
+    ADD BX,AX
+    MOV BYTE PTR[BX],00
+    MOV DX,OFFSET INPUTNAME         ;; INITIALIZE INT21/3D
+    MOV AX,3D00H                    ;; AKA OPEN FILE
+    INT 21H                         ;; COMPLETE INT21/3D
+    JC FINISH                       ;; OPENING WAS SUCCESSFUL AKA CF == 0
+                                    ;; OTHERWISE WAS UNSUCCESFUL
+    MOV INPUTHAND,AX                ;; SAVE OPENING HANDLER
+    MOV DX,OFFSET OUTPUTNAME        ;; TIME TO CREATE OUTPUT FILE
+                                    ;; CREATE IF NOT AVAILABLE
+    MOV CX,0000H                    ;; NO CHARACTERISTICS
+    MOV AX,3C00H                    ;; INITIALIZE INT21/3C
+    INT 21H                         ;; COMPLETE INT21/3C
+    JC FINISH                       ;; CREATION WAS SUCCESSFUL AKA CF == 0
+                                    ;; OTHERWISE WAS UNSUCCESFUL
+    MOV OUTPUTHAND,AX               ;; SAVE OUTPUT HANDLER
+    PRINT_STR NEWLINE               ;; GO TO NEW LINE
+
+LINE_CHANGE:                        ;; RESET LINE INDICATOR ON LINE CHANGE
+    CLEAN
+AGAIN:
+    MOV AH,3FH                      ;; INITIALIZE INT21/3FH
+                                    ;; AKA READ FORM FILE
+    MOV CX,1                        ;; NUMBER OF BYTES TO READ IS 1
+                                    ;; GET INPUT FIRST CHAR
+    MOV DX,OFFSET CHAR_INDICATOR
+    MOV BX,INPUTHAND                ;; SAVE HANDLER
+    INT 21H                         ;; COMPLETE INT21/3FH
+    CMP AX,00H                      ;; CHECK IF IT WAS OPERATION WAS SUCCESSFUL
+                                    ;; IF AX LESS THAN CX THEN PARTION READING TOOK PLACE
+                                    ;; IF AX IS ZERO THEN WE REACHER ENDOFFILE
+    JE FINISH
+    MOV DI,CHAR_INDICATOR
+    MOV AL,DS[DI]                   ;; CHECK IF CHANGE OF LIME OCCURED
+    CMP AL,0DH                      ;; IF SO SAVE THE LINE WE ARE CURRENTLY TO OUTPUT
+                                    ;; ELSE SAVE ON TO LINE INDICATOR
+    JE CONTINUE
+    CALL LINE_CHARACTER_UPDATER
+    JMP AGAIN
+CONTINUE:
+    PRINT_STR NEWLINE               ;; PUT OUT A NEW LINE
+    MOV DI,LINE_INDIC               ;; PASS INDICATOR
+    CALL PRINT_INPUT                ;; PRINT TO INPUT THE CURRENT LINE
+    MOV DI,ROTATION_MAX
+    MOV BL,DS[DI]                   ;; ROTATION NUMBER PLACED IN BL
+    MOV DI,LINE_INDIC
+    MOV CL,DS[DI]                   ;; NUMEBER OF TOTAL CHARS IN CL
+    CMP CL,BL                       ;; CHECK IF ROTATION IF POSIBLE
+                                    ;; IF ROTATION_NUMBER > = TOTAL ELEMS NUM DONT SHIFT
+    JLE ABORT
+    JMP APPROVED
+ABORT:
+    MOV BX,00H
+MOVE_ON:
+    MOV DI,LINE_INDIC
+    INC DI
+    ADD DI,BX
+    MOV AL,DS[DI]
+
+    CMP AL,00H                      ;; END OF LINE REACHED
+
+    JE SUN
+    MOV AH,02H                      ;; PRINT CURRENT CHARACTER OF OUTPUT LINE
+    MOV DL,DS[DI]
+    INT 21H
+    INFILE_STORE                   ;; and store it in output file
+    INC BL
+    JMP MOVE_ON
+
+
+APPROVED:
+    MOV DI,ROTATION_MAX
+    MOV CL,DS[DI]
+    MOV CH,00H
+    MOV DI,LINE_INDIC
+    MOV BL,DS[DI]
+    SUB BL,CL
+    MOV CL,BL                       ;; START PRING FOR NUM OF (CHARS - ROTATION)TH POSITION LINE_INDIC
+    MOV BX,0000H
+RUN_IT:
+    MOV DI,LINE_INDIC
+    INC DI
+
+    ADD DI,BX
+    ADD DI,CX
+    MOV AL,DS[DI]
+    CMP AL,00H
+    JE NEXT_PART
+
+    MOV AH,02H                       ;; PRIN CURRENT CHARACTER OF OUTPUT LINE
+    MOV DL,DS[DI]
+    INT 21H
+    INFILE_STORE                     ;; STORE TO OUTPUT FILE
+    INC BL
+    JMP RUN_IT
+
+NEXT_PART:
+;; PRINT THE REST FROM THE (NUM OF CHAR - ROTATION - 1)TH POSITION LINE_INDIC
+    MOV DI,ROTATION_MAX
+    MOV CL,DS[DI]
+    MOV CH,00H
+
+    MOV DI,LINE_INDIC
+    MOV BL,DS[DI]
+    SUB BL,CL
+
+    MOV CL,BL
+    MOV BX,0000H
+
+RUN_IT_TOO:
+    MOV DI,LINE_INDIC
+    INC DI
+
+    ADD DI,BX
+
+    MOV AH,02H
+    MOV DL,DS[DI]
+    INT 21H
+    INFILE_STORE
+    INC BL
+    CMP BL,CL                       ; READ UNTILL THE CL-1 POSITION OF LINE_INDIC
+    JNE RUN_IT_TOO
+
+SUN:
+    PRINT_STR NEWLINE
+    MOV DL,0DH                      ;now store a newl and a cret in output file
+    INFILE_STORE
+    MOV DL,0AH
+    INFILE_STORE
+
+    JMP LINE_CHANGE                      ;and clear LINE_INDIC for next loop
+;-------------
+FINISH:
+    MOV AH,3EH                      ;close input file
+    MOV BX,INPUTHAND
+    INT 21H
+    MOV AH,3EH
+    MOV BX,OUTPUTHAND                  ;close output file
+    INT 21H
+    POP DS
+    MOV AH,4CH
+    INT 21H
+    EXIT
+MAIN ENDP
+;----------------------------------------------------------------
+DEC_KEYB PROC NEAR
+    PUSH DX
+IGNORE:
+    READ
+    CMP AL,30H
+    JL IGNORE
+    CMP AL,39H
+    JG IGNORE
+    PRINT AL
+    SUB AL,30H
+CHECKPOINT:
+    POP DX
+    RET
+DEC_KEYB ENDP
+;-------------------------------------------------------------------
+LINE_CHARACTER_UPDATER PROC NEAR
+;; PAST THE CURRENT NUMBER OF CHARACTER THA WAS READ
+;; CHECK THE THE FIRST ARRAY ELEMENT - THE TOTAL NUMBER OF ELEMENTS
+;; STORED SO FAR, MOVE ON TO NEXT FREE POSITION, STORE THE NEW
+;; AND INCREMENT THE COUNTER OF CHACACTERS OF THE ARRAY
+    MOV DI,CHAR_INDICATOR           ;; LOAD CURRENT CHARACTER READ
+    MOV AL,DS[DI]                   ;; PASS IT TO A
+    CMP AL,0AH                      ;; CHECK IF WE ARE DONE
+    JE FINISHOVER
+    MOV DI,LINE_INDIC               ;; LOAD CURRENT LINE
+    MOV BL,DS[DI]                   ;; FIRST ELEMENT IS TOTAL NUMBER OF ARRAY
+                                    ;; ELEMS STORED AS FAR
+    MOV BH,00H
+    ADD DI,BX                       ;; FIND AVAILABLE SPACE
+    INC DI
+    MOV DS[DI],AL                   ;; STORE THE CURRENT CHAR
+    INC BL                          ;; UPDATE THE ELEMS COUNTER
+    MOV DI,LINE_INDIC
+    MOV DS[DI],BL                  ;; STORE BACK TO ARRAY
+FINISHOVER:
+    RET
+LINE_CHARACTER_UPDATER ENDP
+;----------------------------------------------------------------
+PRINT_INPUT PROC NEAR
+;; CHECK TOTAL NUMBER OF ELEMENTS AND PRINT THEM
+    PUSH AX
+    PUSH CX
+    MOV AH,02H
+    MOV CL,DS[DI]                   ;; SAVE NUMBER OF ELEMENT IN THE FIRST PLACE OF THE ARRAY
+    INC DI
+KEEPUP:
+    MOV DL,DS[DI]                   ;; PRINT THE TOTAL ELEMENTS OF THE ARRAY
+    INT 21H
+    DEC CL
+    INC DI
+    CMP CL,00H
+    JGE KEEPUP
+    PRINT_STR NEWLINE
+    POP CX
+    POP AX
+    RET
+PRINT_INPUT ENDP
+
+CODE ENDS
+    END MAIN
