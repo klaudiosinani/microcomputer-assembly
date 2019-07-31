@@ -8,7 +8,7 @@
 
 ## Description
 
-The repository is home to all 9 Lab Assignments of the 2017 Microcomputers Lab course @ ECE NTUA.
+The repository is home to the coding assignments of the 2017 Microcomputers Lab course @ Electrical & Computer Engineering - National Technical University of Athens.
 
 8086/85 programs have been coded, debugged and tested using the appropriate 8086/85 emulators. AVR programs have been coded, debugged and tested on actual AVR Microcomputers.
 
