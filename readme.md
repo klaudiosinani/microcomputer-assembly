@@ -152,8 +152,8 @@ By constantly pressing the PA0 key the user sets on the stopwatch, which can cou
 
 ## Team
 
-- [Klaus Sinani](https://github.com/klaussinani)
+- [Klaudio Sinani](https://github.com/klaudiosinani)
 
 ## License
 
-[MIT](https://github.com/klaussinani/microcomputer-assembly/blob/master/license.md)
+[MIT](https://github.com/klaudiosinani/microcomputer-assembly/blob/master/license.md)
